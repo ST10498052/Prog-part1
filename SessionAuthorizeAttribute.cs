@@ -1,97 +1,56 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using RaceDay.Api.Data;
-using RaceDay.Api.Dtos;
-using RaceDay.Api.Models;
-using RaceDay.Api.Services;
+using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace RaceDay.Api.Controllers;
+namespace RaceDay.Api.Services;
 
-/// <summary>Registration, login and logout. Login stores the user's id and role in the session.</summary>
-[ApiController]
-[Route("api/auth")]
-[Produces("application/json")]
-public class AuthController : ControllerBase
+/// <summary>Session keys and helpers for reading the logged-in user.</summary>
+public static class SessionExtensions
 {
-    private readonly RaceDayDbContext _db;
-    private readonly PasswordService _passwords;
+    public const string UserIdKey = "UserId";
+    public const string RoleKey = "Role";
 
-    public AuthController(RaceDayDbContext db, PasswordService passwords)
+    public static int? GetUserId(this HttpContext context) => context.Session.GetInt32(UserIdKey);
+    public static string? GetRole(this HttpContext context) => context.Session.GetString(RoleKey);
+}
+
+/// <summary>
+/// Session-based authorization. With no roles: any logged-in user is allowed.
+/// With roles: the session role must match one of them.
+/// Not logged in = 401 Unauthorized. Wrong role = 403 Forbidden.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+public class SessionAuthorizeAttribute : Attribute, IAsyncAuthorizationFilter
+{
+    private readonly string[] _roles;
+
+    public SessionAuthorizeAttribute(params string[] roles)
     {
-        _db = db;
-        _passwords = passwords;
+        _roles = roles;
     }
 
-    /// <summary>Register a new account as an Organiser or a Participant.</summary>
-    /// <remarks>The password is hashed before it is stored. Emails must be unique.</remarks>
-    /// <response code="201">Account created. Returns the new profile.</response>
-    /// <response code="400">Validation failed (e.g. invalid role, short password).</response>
-    /// <response code="409">An account with this email already exists.</response>
-    [HttpPost("register")]
-    [ProducesResponseType(typeof(UserProfileResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
     {
-        if (request.Role != RoleNames.Organiser && request.Role != RoleNames.Participant)
-            return BadRequest(new { message = "Role must be 'Organiser' or 'Participant'." });
+        await context.HttpContext.Session.LoadAsync();
 
-        var email = request.Email.Trim().ToLowerInvariant();
-        if (await _db.Users.AnyAsync(u => u.Email == email))
-            return Conflict(new { message = "An account with this email already exists." });
+        var userId = context.HttpContext.GetUserId();
+        var role = context.HttpContext.GetRole();
 
-        var role = await _db.Roles.SingleAsync(r => r.RoleName == request.Role);
-
-        var user = new User
+        if (userId is null || role is null)
         {
-            RoleId = role.RoleId,
-            Role = role,
-            FullName = request.FullName.Trim(),
-            Email = email,
-            PasswordHash = _passwords.Hash(request.Password),
-            PhoneNumber = request.PhoneNumber,
-            CreatedAt = DateTime.UtcNow
-        };
+            context.Result = new ObjectResult(new { message = "You must be logged in to access this resource." })
+            {
+                StatusCode = StatusCodes.Status401Unauthorized
+            };
+            return;
+        }
 
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
-
-        return StatusCode(StatusCodes.Status201Created, user.ToResponse());
-    }
-
-    /// <summary>Log in with email and password and start a session.</summary>
-    /// <remarks>A session cookie is issued. It carries the user's id and role on every later request.</remarks>
-    /// <response code="200">Logged in. Returns the profile including the role.</response>
-    /// <response code="401">Invalid email or password.</response>
-    [HttpPost("login")]
-    [ProducesResponseType(typeof(UserProfileResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request)
-    {
-        var email = request.Email.Trim().ToLowerInvariant();
-        var user = await _db.Users.Include(u => u.Role).SingleOrDefaultAsync(u => u.Email == email);
-
-        if (user is null || !_passwords.Verify(request.Password, user.PasswordHash))
-            return Unauthorized(new { message = "Invalid email or password." });
-
-        await HttpContext.Session.LoadAsync();
-        HttpContext.Session.Clear();
-        HttpContext.Session.SetInt32(UserSessionExtensions.UserIdKey, user.UserId);
-        HttpContext.Session.SetString(UserSessionExtensions.RoleKey, user.Role!.RoleName);
-
-        return Ok(user.ToResponse());
-    }
-
-    /// <summary>Log out and end the current session.</summary>
-    /// <response code="200">Logged out.</response>
-    /// <response code="401">Not logged in.</response>
-    [HttpPost("logout")]
-    [SessionAuthorize]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public IActionResult Logout()
-    {
-        HttpContext.Session.Clear();
-        return Ok(new { message = "Logged out." });
+        if (_roles.Length > 0 && !_roles.Contains(role))
+        {
+            context.Result = new ObjectResult(new { message = $"This action is only available to: {string.Join(", ", _roles)}." })
+            {
+                StatusCode = StatusCodes.Status403Forbidden
+            };
+        }
     }
 }
