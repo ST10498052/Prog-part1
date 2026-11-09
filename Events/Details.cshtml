@@ -1,0 +1,127 @@
+@model EventDetailsViewModel
+@{
+    var ev = Model.Event;
+    ViewData["Title"] = ev.Name;
+    var categories = ev.Categories ?? new List<CategoryDto>();
+    var canEnrol = ev.Status == "Published" && ev.EventDate >= DateTime.Now && Model.Enrolment is null;
+}
+
+<a asp-action="Index" class="rd-back">&larr; All events</a>
+
+<div class="rd-detail-banner mb-4">
+    @if (!string.IsNullOrEmpty(ev.BannerImage))
+    {
+        <img src="@Ui.ImageUrl(ev.BannerImage)" alt="Banner for @ev.Name" />
+    }
+    else
+    {
+        <div class="rd-placeholder rd-placeholder-lg"><span>@ev.EventType.ToUpperInvariant()</span></div>
+    }
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="mb-2 d-flex gap-2 align-items-center">
+            @Ui.TypeBadge(ev.EventType)
+            @Ui.StatusBadge(ev.Status)
+        </div>
+        <h1 class="rd-title">@ev.Name</h1>
+        @if (!string.IsNullOrWhiteSpace(ev.Description))
+        {
+            <p class="rd-description">@ev.Description</p>
+        }
+    </div>
+    <div class="col-lg-5">
+        <div class="rd-panel">
+            <dl class="rd-facts mb-0">
+                <dt>When</dt><dd>@Ui.DateTimeText(ev.EventDate)</dd>
+                <dt>Where</dt><dd>@ev.Location</dd>
+                <dt>Distance</dt><dd>@Ui.Distance(ev.DistanceKm)</dd>
+                <dt>Type</dt><dd>@ev.EventType</dd>
+                <dt>Organiser</dt><dd>@ev.OrganiserName</dd>
+            </dl>
+        </div>
+    </div>
+</div>
+
+<div class="rd-panel mt-4">
+    <h2 class="rd-subtitle">Categories</h2>
+
+    @if (Model.Enrolment is not null)
+    {
+        <div class="alert alert-success">
+            You are enrolled in <strong>@Model.Enrolment.CategoryName</strong>. Your bib number is <strong>@Model.Enrolment.BibNumber</strong>.
+            @Ui.StatusBadge(Model.Enrolment.DisplayStatus)
+        </div>
+    }
+    else if (!canEnrol)
+    {
+        <div class="alert alert-secondary">Enrolment is closed for this event.</div>
+    }
+
+    @if (categories.Count == 0)
+    {
+        <p class="text-muted mb-0">The organiser has not added any categories yet.</p>
+    }
+    else
+    {
+        <form asp-action="Enrol" asp-route-id="@ev.EventId" method="post">
+            <div class="table-responsive">
+                <table class="table rd-table align-middle">
+                    <thead>
+                        <tr>
+                            @if (canEnrol)
+                            {
+                                <th></th>
+                            }
+                            <th>Category</th>
+                            <th>Ages</th>
+                            <th>Distance</th>
+                            <th>Entry fee</th>
+                            <th>Places</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in categories)
+                        {
+                            var spotsLeft = c.MaxParticipants - c.EnrolledCount;
+                            var full = spotsLeft <= 0;
+                            <tr>
+                                @if (canEnrol)
+                                {
+                                    <td>
+                                        <input type="radio" name="categoryId" value="@c.CategoryId" id="@("cat" + c.CategoryId)" disabled="@full" required />
+                                    </td>
+                                }
+                                <td>
+                                    <label for="@("cat" + c.CategoryId)" class="fw-semibold">@c.Name</label>
+                                    @if (!string.IsNullOrWhiteSpace(c.Description))
+                                    {
+                                        <div class="text-muted small">@c.Description</div>
+                                    }
+                                </td>
+                                <td>@Ui.AgeRange(c.MinAge, c.MaxAge)</td>
+                                <td>@Ui.Distance(c.DistanceKm)</td>
+                                <td>@Ui.Money(c.EntryFee)</td>
+                                <td>
+                                    @if (full)
+                                    {
+                                        <span class="rd-status rd-status-red">Full</span>
+                                    }
+                                    else
+                                    {
+                                        <span>@spotsLeft left</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (canEnrol)
+            {
+                <button type="submit" class="btn btn-primary">Enrol now</button>
+            }
+        </form>
+    }
+</div>
