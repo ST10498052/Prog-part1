@@ -3,12 +3,14 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using RaceDay.Api.Data;
+using RaceDay.Api.Services;
 
 namespace RaceDay.Tests;
 
 /// <summary>
 /// Starts the real API in memory for tests, swapping SQL Server for an in-memory
-/// database so tests need no SQL Server (and also run on GitHub Actions).
+/// database and Azure Blob Storage for a fake, so tests need neither (and also run
+/// on GitHub Actions).
 /// </summary>
 public class RaceDayFactory : WebApplicationFactory<Program>
 {
@@ -19,10 +21,13 @@ public class RaceDayFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Testing");
         builder.ConfigureServices(services =>
         {
-            var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<RaceDayDbContext>));
-            if (descriptor != null) services.Remove(descriptor);
-
+            var dbDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<RaceDayDbContext>));
+            if (dbDescriptor != null) services.Remove(dbDescriptor);
             services.AddDbContext<RaceDayDbContext>(options => options.UseInMemoryDatabase(_dbName));
+
+            var blobDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IBlobStorageService));
+            if (blobDescriptor != null) services.Remove(blobDescriptor);
+            services.AddSingleton<IBlobStorageService, FakeBlobStorageService>();
         });
     }
 }
