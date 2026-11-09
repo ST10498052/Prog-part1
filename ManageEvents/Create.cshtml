@@ -1,0 +1,16 @@
+@model EventFormViewModel
+@{
+    ViewData["Title"] = "New event";
+}
+
+<a asp-action="Index" class="rd-back">&larr; My events</a>
+<div class="rd-panel">
+    <h1 class="rd-title">New event</h1>
+    <form asp-action="Create" method="post" enctype="multipart/form-data" novalidate>
+        <partial name="_EventForm" model="Model" />
+        <div class="mt-4 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Create event</button>
+            <a class="btn btn-outline-secondary" asp-action="Index">Cancel</a>
+        </div>
+    </form>
+</div>
