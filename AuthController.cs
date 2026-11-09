@@ -76,8 +76,8 @@ public class AuthController : ControllerBase
 
         await HttpContext.Session.LoadAsync();
         HttpContext.Session.Clear();
-        HttpContext.Session.SetInt32(SessionExtensions.UserIdKey, user.UserId);
-        HttpContext.Session.SetString(SessionExtensions.RoleKey, user.Role!.RoleName);
+        HttpContext.Session.SetInt32(UserSessionExtensions.UserIdKey, user.UserId);
+        HttpContext.Session.SetString(UserSessionExtensions.RoleKey, user.Role!.RoleName);
 
         return Ok(user.ToResponse());
     }
