@@ -11,6 +11,11 @@ builder.Services.AddDbContext<RaceDayDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddSingleton<PasswordService>();
+
+// Azure Blob Storage (images). Configured through AzureBlobStorage:ConnectionString,
+// kept in user-secrets / environment variables, never committed to GitHub.
+builder.Services.AddSingleton<IBlobStorageService, AzureBlobStorageService>();
+
 builder.Services.AddControllers();
 
 // Session management: keeps the user's id and role between requests
@@ -59,7 +64,8 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/swagger/v1/swagger.json", "RaceDay API v1");
 });
 
-app.UseHttpsRedirection();
+// Note: no HTTPS redirection here. The MVC app (and its Docker container) call this API
+// over plain HTTP on localhost; HTTPS would be terminated by the hosting platform in production.
 app.UseSession();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
