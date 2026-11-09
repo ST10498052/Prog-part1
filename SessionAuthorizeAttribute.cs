@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace RaceDay.Api.Services;
 
 /// <summary>Session keys and helpers for reading the logged-in user.</summary>
-public static class SessionExtensions
+public static class UserSessionExtensions
 {
     public const string UserIdKey = "UserId";
     public const string RoleKey = "Role";
