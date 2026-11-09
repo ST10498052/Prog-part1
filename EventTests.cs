@@ -180,4 +180,30 @@ public class EventTests : IClassFixture<RaceDayFactory>
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
+
+    [Fact]
+    public async Task DraftEvent_IsHiddenFromOtherUsers_ButVisibleToItsOwner()
+    {
+        var organiser = await LoggedInClientAsync(_factory, Organiser);
+        var participant = await LoggedInClientAsync(_factory, Participant);
+        var name = "Draft " + Guid.NewGuid().ToString("N");
+        var create = await organiser.PostAsJsonAsync("/api/events", new
+        {
+            name,
+            eventDate = DateTime.UtcNow.AddMonths(1),
+            location = "Cape Town",
+            distanceKm = 5,
+            eventType = "Run",
+            status = "Draft"
+        });
+        var eventId = (await ReadJsonAsync(create)).GetProperty("eventId").GetInt32();
+
+        var participantList = (await ReadJsonAsync(await participant.GetAsync("/api/events"))).ToString();
+        var participantGet = await participant.GetAsync($"/api/events/{eventId}");
+        var ownerGet = await organiser.GetAsync($"/api/events/{eventId}");
+
+        Assert.DoesNotContain(name, participantList);
+        Assert.Equal(HttpStatusCode.NotFound, participantGet.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, ownerGet.StatusCode);
+    }
 }

@@ -166,4 +166,21 @@ public class EnrolmentTests : IClassFixture<RaceDayFactory>
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Organiser_Mine_ShowsEnrolmentCount()
+    {
+        var organiser = await LoggedInClientAsync(_factory, Organiser);
+        var first = await LoggedInClientAsync(_factory, Participant);
+        var second = await LoggedInClientAsync(_factory, Participant);
+        var eventId = await CreateEventAsync(organiser);
+        var categoryId = await CreateCategoryAsync(organiser, eventId);
+        await EnrolAsync(first, eventId, categoryId);
+        await EnrolAsync(second, eventId, categoryId);
+
+        var mine = await ReadJsonAsync(await organiser.GetAsync("/api/events/mine"));
+
+        Assert.Equal(1, mine.GetArrayLength());
+        Assert.Equal(2, mine[0].GetProperty("enrolmentCount").GetInt32());
+    }
 }

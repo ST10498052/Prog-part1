@@ -145,4 +145,42 @@ public class ResultTests : IClassFixture<RaceDayFactory>
         Assert.Equal(1, json[0].GetProperty("position").GetInt32());
         Assert.Equal(2, json[1].GetProperty("position").GetInt32());
     }
+
+    [Fact]
+    public async Task ParticipantResult_IncludesEventDateAndTotalFinishers()
+    {
+        var organiser = await LoggedInClientAsync(_factory, Organiser);
+        var first = await LoggedInClientAsync(_factory, Participant);
+        var second = await LoggedInClientAsync(_factory, Participant);
+        var eventId = await CreateEventAsync(organiser);
+        var categoryId = await CreateCategoryAsync(organiser, eventId);
+        var enrolA = await EnrolAsync(first, eventId, categoryId);
+        var enrolB = await EnrolAsync(second, eventId, categoryId);
+        await organiser.PostAsJsonAsync($"/api/enrolments/{enrolA}/result", FinishedBody("01:00:00", 1));
+        await organiser.PostAsJsonAsync($"/api/enrolments/{enrolB}/result", FinishedBody("01:10:00", 2));
+
+        var json = await ReadJsonAsync(await second.GetAsync("/api/users/me/results"));
+
+        Assert.Equal(1, json.GetArrayLength());
+        Assert.Equal(2, json[0].GetProperty("position").GetInt32());
+        Assert.Equal(2, json[0].GetProperty("totalFinishers").GetInt32());
+        Assert.True(json[0].TryGetProperty("eventDate", out _));
+    }
+
+    [Fact]
+    public async Task Enrolment_ShowsCompleted_OnceAResultIsCaptured()
+    {
+        var organiser = await LoggedInClientAsync(_factory, Organiser);
+        var participant = await LoggedInClientAsync(_factory, Participant);
+        var eventId = await CreateEventAsync(organiser);
+        var categoryId = await CreateCategoryAsync(organiser, eventId);
+        var enrolmentId = await EnrolAsync(participant, eventId, categoryId);
+
+        var before = await ReadJsonAsync(await participant.GetAsync("/api/users/me/enrolments"));
+        await organiser.PostAsJsonAsync($"/api/enrolments/{enrolmentId}/result", FinishedBody());
+        var after = await ReadJsonAsync(await participant.GetAsync("/api/users/me/enrolments"));
+
+        Assert.Equal("Confirmed", before[0].GetProperty("displayStatus").GetString());
+        Assert.Equal("Completed", after[0].GetProperty("displayStatus").GetString());
+    }
 }
