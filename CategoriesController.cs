@@ -34,7 +34,8 @@ public class CategoriesController : ControllerBase
         if (!await _db.Events.AnyAsync(e => e.EventId == eventId))
             return NotFound(new { message = "Event not found." });
 
-        var list = await _db.Categories.Where(c => c.EventId == eventId).OrderBy(c => c.CategoryId).ToListAsync();
+        var list = await _db.Categories.Include(c => c.Enrolments)
+            .Where(c => c.EventId == eventId).OrderBy(c => c.CategoryId).ToListAsync();
         return Ok(list.Select(c => c.ToResponse()));
     }
 
@@ -94,7 +95,8 @@ public class CategoriesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(int id, [FromBody] CategoryRequest request)
     {
-        var category = await _db.Categories.Include(c => c.Event).SingleOrDefaultAsync(c => c.CategoryId == id);
+        var category = await _db.Categories.Include(c => c.Event).Include(c => c.Enrolments)
+            .SingleOrDefaultAsync(c => c.CategoryId == id);
         if (category is null) return NotFound(new { message = "Category not found." });
         if (category.Event!.OrganiserId != HttpContext.GetUserId())
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "You can only edit categories of your own events." });
