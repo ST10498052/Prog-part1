@@ -1,0 +1,15 @@
+@model EventPickerViewModel
+
+@if (Model.Events.Count > 0)
+{
+    <form method="get" class="rd-picker">
+        <label for="eventId" class="form-label mb-0">Event</label>
+        <select id="eventId" name="eventId" class="form-select" onchange="this.form.submit()">
+            @foreach (var ev in Model.Events)
+            {
+                <option value="@ev.EventId" selected="@(ev.EventId == Model.SelectedId)">@ev.Name (@Ui.Date(ev.EventDate))</option>
+            }
+        </select>
+        <noscript><button type="submit" class="btn btn-primary">Show</button></noscript>
+    </form>
+}

@@ -1,0 +1,28 @@
+@model EventDto
+
+<div class="card rd-card h-100">
+    @if (!string.IsNullOrEmpty(Model.BannerImage))
+    {
+        <img class="rd-card-img" src="@Ui.ImageUrl(Model.BannerImage)" alt="Banner for @Model.Name" />
+    }
+    else
+    {
+        <div class="rd-card-img rd-placeholder"><span>@Model.EventType.ToUpperInvariant()</span></div>
+    }
+    <div class="card-body d-flex flex-column">
+        <div class="mb-2 d-flex gap-2 align-items-center">
+            @Ui.TypeBadge(Model.EventType)
+            @if (Model.Status != "Published")
+            {
+                <text>@Ui.StatusBadge(Model.Status)</text>
+            }
+        </div>
+        <h2 class="rd-card-title">@Model.Name</h2>
+        <ul class="rd-meta list-unstyled mb-3">
+            <li>@Ui.DateTimeText(Model.EventDate)</li>
+            <li>@Model.Location</li>
+            <li>@Ui.Distance(Model.DistanceKm)</li>
+        </ul>
+        <a class="btn btn-primary mt-auto" asp-controller="Events" asp-action="Details" asp-route-id="@Model.EventId">View event</a>
+    </div>
+</div>
