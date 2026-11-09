@@ -81,7 +81,7 @@ public class EnrolmentsController : ControllerBase
         }
 
         var saved = await _db.Enrolments
-            .Include(e => e.Participant).Include(e => e.Event).Include(e => e.Category)
+            .Include(e => e.Participant).Include(e => e.Event).Include(e => e.Category).Include(e => e.Result)
             .SingleAsync(e => e.EnrolmentId == enrolment.EnrolmentId);
 
         return StatusCode(StatusCodes.Status201Created, saved.ToResponse());
@@ -106,7 +106,7 @@ public class EnrolmentsController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "You can only view enrolments for your own events." });
 
         var list = await _db.Enrolments
-            .Include(e => e.Participant).Include(e => e.Event).Include(e => e.Category)
+            .Include(e => e.Participant).Include(e => e.Event).Include(e => e.Category).Include(e => e.Result)
             .Where(e => e.EventId == eventId)
             .OrderBy(e => e.EnrolmentDate)
             .ToListAsync();

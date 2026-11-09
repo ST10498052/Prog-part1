@@ -118,10 +118,10 @@ public class ResultsController : ControllerBase
             .Where(r => r.Enrolment!.EventId == eventId)
             .ToListAsync();
 
-        var ordered = list
+        var built = await ResultResponseBuilder.BuildAsync(_db, list);
+        var ordered = built
             .OrderBy(r => r.Position.HasValue ? 0 : 1)
-            .ThenBy(r => r.Position)
-            .Select(r => r.ToResponse());
+            .ThenBy(r => r.Position);
         return Ok(ordered);
     }
 
@@ -139,6 +139,6 @@ public class ResultsController : ControllerBase
             .Include(r => r.Enrolment).ThenInclude(e => e!.Event)
             .Include(r => r.Enrolment).ThenInclude(e => e!.Category)
             .SingleAsync(r => r.ResultId == resultId);
-        return result.ToResponse();
+        return (await ResultResponseBuilder.BuildAsync(_db, new[] { result })).Single();
     }
 }
