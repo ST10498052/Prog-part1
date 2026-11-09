@@ -1,52 +1,30 @@
-using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
-using RaceDay.Api.Services;
+using RaceDay.Web.Filters;
+using RaceDay.Web.Services;
 
-namespace RaceDay.Api.Controllers;
+namespace RaceDay.Web.Controllers;
 
-/// <summary>Serves stored images (event banners and profile pictures) to logged-in users.</summary>
-/// <remarks>The storage container is private, so every image is streamed through the API.</remarks>
-[ApiController]
-[Route("api/files")]
-[SessionAuthorize]
-public class FilesController : ControllerBase
+/// <summary>
+/// Shows event banners and profile pictures. The browser asks this app, and this app asks the
+/// API for the image, so the MVC app never talks to Azure directly.
+/// </summary>
+[AppAuthorize]
+public class FilesController : Controller
 {
-    private static readonly Regex AllowedName = new(@"^(banners|profiles)/[A-Za-z0-9._-]+$", RegexOptions.Compiled);
+    private readonly ApiClient _api;
 
-    private readonly IBlobStorageService _blobs;
-
-    public FilesController(IBlobStorageService blobs)
+    public FilesController(ApiClient api)
     {
-        _blobs = blobs;
+        _api = api;
     }
 
-    /// <summary>Download an image by its blob name, e.g. banners/12-abc.jpg.</summary>
-    /// <param name="blobName">The BannerImage or ProfilePicture value returned by the API.</param>
-    /// <response code="200">The image file.</response>
-    /// <response code="401">Not logged in.</response>
-    /// <response code="404">No such image.</response>
-    /// <response code="503">Image storage is not available.</response>
-    [HttpGet("{*blobName}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<IActionResult> Download(string blobName)
+    [HttpGet("/files/{*name}")]
+    public async Task<IActionResult> Image(string name)
     {
-        if (!AllowedName.IsMatch(blobName))
-            return NotFound(new { message = "Image not found." });
+        var file = await _api.GetFileAsync(name);
+        if (file is null) return NotFound();
 
-        try
-        {
-            var file = await _blobs.DownloadAsync(blobName);
-            if (file is null) return NotFound(new { message = "Image not found." });
-
-            Response.Headers.CacheControl = "private, max-age=600";
-            return File(file.Value.Content, file.Value.ContentType);
-        }
-        catch (BlobStorageUnavailableException ex)
-        {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = ex.Message });
-        }
+        Response.Headers.CacheControl = "private, max-age=600";
+        return File(file.Value.Data, file.Value.ContentType);
     }
 }
