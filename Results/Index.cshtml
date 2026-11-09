@@ -1,0 +1,98 @@
+@model ResultsPageViewModel
+@{
+    ViewData["Title"] = "Results";
+}
+
+<div class="rd-pagehead">
+    <h1 class="rd-title">Results entry</h1>
+    <partial name="_EventPicker" model="@(new EventPickerViewModel { Events = Model.Events, SelectedId = Model.Selected?.EventId })" />
+</div>
+
+@if (ViewBag.Error is string loadError)
+{
+    <div class="alert alert-danger">@loadError</div>
+}
+
+@if (Model.Selected is null)
+{
+    <div class="rd-empty">
+        <h2>No events yet</h2>
+        <p>Create an event and wait for participants to enrol before capturing results.</p>
+    </div>
+}
+else
+{
+    if (Model.Selected.EventDate > DateTime.Now)
+    {
+        <div class="alert alert-info">This event has not taken place yet. Results are normally captured after the event concludes.</div>
+    }
+
+    if (Model.Rows.Count == 0)
+    {
+        <div class="rd-empty">
+            <h2>No participants to record</h2>
+            <p>Nobody has enrolled for @Model.Selected.Name.</p>
+        </div>
+    }
+    else
+    {
+        <form asp-action="Save" method="post" novalidate>
+            <input type="hidden" name="eventId" value="@Model.Selected.EventId" />
+            <div class="rd-panel p-0">
+                <div class="px-3 pt-3">
+                    <h2 class="rd-subtitle mb-1">@Model.Selected.Name</h2>
+                    <p class="text-muted small mb-0">
+                        Choose a status for each participant, then enter their finish time (hh:mm:ss) and finishing position.
+                        Rows left as "Not recorded" are skipped. Saved results are published to participants straight away.
+                    </p>
+                </div>
+                <div class="table-responsive mt-3">
+                    <table class="table rd-table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Bib</th>
+                                <th>Participant</th>
+                                <th>Category</th>
+                                <th style="width: 11rem">Status</th>
+                                <th style="width: 9rem">Finish time</th>
+                                <th style="width: 7rem">Position</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < Model.Rows.Count; i++)
+                            {
+                                var row = Model.Rows[i];
+                                <tr class="@(row.RowError != null ? "rd-row-error" : "")">
+                                    <td class="rd-time">@row.BibNumber</td>
+                                    <td>
+                                        <span class="fw-semibold">@row.ParticipantName</span>
+                                        <input type="hidden" name="rows[@i].EnrolmentId" value="@row.EnrolmentId" />
+                                        <input type="hidden" name="rows[@i].ResultId" value="@row.ResultId" />
+                                        @if (row.RowError != null)
+                                        {
+                                            <div class="rd-row-msg">@row.RowError</div>
+                                        }
+                                    </td>
+                                    <td>@row.CategoryName</td>
+                                    <td>
+                                        <select name="rows[@i].Status" class="form-select form-select-sm">
+                                            <option value="" selected="@(string.IsNullOrEmpty(row.Status))">Not recorded</option>
+                                            <option value="Finished" selected="@(row.Status == "Finished")">Finished</option>
+                                            <option value="DNF" selected="@(row.Status == "DNF")">Did not finish</option>
+                                            <option value="DSQ" selected="@(row.Status == "DSQ")">Disqualified</option>
+                                        </select>
+                                    </td>
+                                    <td><input type="text" name="rows[@i].FinishTime" value="@row.FinishTime" placeholder="01:52:30" maxlength="12" class="form-control form-control-sm" /></td>
+                                    <td><input type="number" name="rows[@i].Position" value="@row.Position" min="1" class="form-control form-control-sm" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="p-3">
+                    <button type="submit" class="btn btn-primary">Save and publish results</button>
+                </div>
+            </div>
+        </form>
+    }
+}

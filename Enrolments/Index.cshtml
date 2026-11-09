@@ -1,0 +1,64 @@
+@model EnrolmentsPageViewModel
+@{
+    ViewData["Title"] = "Enrolments";
+}
+
+<div class="rd-pagehead">
+    <h1 class="rd-title">Enrolments</h1>
+    <partial name="_EventPicker" model="@(new EventPickerViewModel { Events = Model.Events, SelectedId = Model.Selected?.EventId })" />
+</div>
+
+@if (ViewBag.Error is string loadError)
+{
+    <div class="alert alert-danger">@loadError</div>
+}
+
+@if (Model.Selected is null)
+{
+    <div class="rd-empty">
+        <h2>No events yet</h2>
+        <p>Enrolments appear here once participants enter one of your events.</p>
+        <a class="btn btn-primary" asp-controller="ManageEvents" asp-action="Create">Create an event</a>
+    </div>
+}
+else
+{
+    <div class="rd-panel p-0">
+        <div class="px-3 pt-3 d-flex flex-wrap justify-content-between align-items-center">
+            <h2 class="rd-subtitle mb-0">@Model.Selected.Name</h2>
+            <span class="text-muted">@Model.Enrolments.Count participant(s) &middot; @Ui.Date(Model.Selected.EventDate)</span>
+        </div>
+        @if (Model.Enrolments.Count == 0)
+        {
+            <p class="text-muted p-3 mb-0">Nobody has enrolled for this event yet.</p>
+        }
+        else
+        {
+            <div class="table-responsive mt-3">
+                <table class="table rd-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Bib</th>
+                            <th>Participant</th>
+                            <th>Category</th>
+                            <th>Enrolled on</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var e in Model.Enrolments)
+                        {
+                            <tr>
+                                <td class="rd-time">@e.BibNumber</td>
+                                <td class="fw-semibold">@e.ParticipantName</td>
+                                <td>@e.CategoryName</td>
+                                <td>@Ui.Date(e.EnrolmentDate)</td>
+                                <td>@Ui.StatusBadge(e.DisplayStatus)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}

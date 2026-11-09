@@ -1,0 +1,120 @@
+@model CategoriesPageViewModel
+@{
+    ViewData["Title"] = "Categories";
+}
+
+<div class="rd-pagehead">
+    <h1 class="rd-title">Categories</h1>
+    <partial name="_EventPicker" model="@(new EventPickerViewModel { Events = Model.Events, SelectedId = Model.Selected?.EventId })" />
+</div>
+
+@if (ViewBag.Error is string loadError)
+{
+    <div class="alert alert-danger">@loadError</div>
+}
+
+@if (Model.Selected is null)
+{
+    <div class="rd-empty">
+        <h2>Create an event first</h2>
+        <p>Categories belong to an event, so you need at least one event.</p>
+        <a class="btn btn-primary" asp-controller="ManageEvents" asp-action="Create">Create an event</a>
+    </div>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="rd-panel p-0">
+                <div class="px-3 pt-3"><h2 class="rd-subtitle">Categories for @Model.Selected.Name</h2></div>
+                @if (Model.Categories.Count == 0)
+                {
+                    <p class="text-muted px-3 pb-3 mb-0">No categories yet. Add the first one using the form.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table rd-table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Ages</th>
+                                    <th>Distance</th>
+                                    <th>Fee</th>
+                                    <th>Entered</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in Model.Categories)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@c.Name</div>
+                                            @if (!string.IsNullOrWhiteSpace(c.Description))
+                                            {
+                                                <div class="text-muted small">@c.Description</div>
+                                            }
+                                        </td>
+                                        <td>@Ui.AgeRange(c.MinAge, c.MaxAge)</td>
+                                        <td>@Ui.Distance(c.DistanceKm)</td>
+                                        <td>@Ui.Money(c.EntryFee)</td>
+                                        <td>@c.EnrolledCount / @c.MaxParticipants</td>
+                                        <td class="text-end text-nowrap">
+                                            <a class="btn btn-outline-primary btn-sm" asp-action="Edit" asp-route-id="@c.CategoryId" asp-route-eventId="@c.EventId">Edit</a>
+                                            <form asp-action="Delete" asp-route-id="@c.CategoryId" asp-route-eventId="@c.EventId" method="post" class="d-inline" onsubmit="return confirm('Delete this category?');">
+                                                <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="rd-panel">
+                <h2 class="rd-subtitle">Add a category</h2>
+                <p class="text-muted small">Use ages (e.g. Under 20, Senior) and/or a distance (e.g. 10 km, 21 km).</p>
+                <form asp-action="Create" method="post" novalidate>
+                    <input type="hidden" name="EventId" value="@Model.Selected.EventId" />
+                    <div class="mb-3">
+                        <label for="Name" class="form-label">Name</label>
+                        <input type="text" id="Name" name="Name" class="form-control" maxlength="100" placeholder="e.g. Under 20" />
+                    </div>
+                    <div class="mb-3">
+                        <label for="Description" class="form-label">Description <span class="text-muted">(optional)</span></label>
+                        <input type="text" id="Description" name="Description" class="form-control" maxlength="255" />
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label for="MinAge" class="form-label">Minimum age</label>
+                            <input type="number" id="MinAge" name="MinAge" class="form-control" min="0" max="120" />
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="MaxAge" class="form-label">Maximum age</label>
+                            <input type="number" id="MaxAge" name="MaxAge" class="form-control" min="0" max="120" />
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label for="DistanceKm" class="form-label">Distance (km)</label>
+                            <input type="number" id="DistanceKm" name="DistanceKm" class="form-control" step="0.01" min="0.01" />
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="EntryFee" class="form-label">Entry fee (R)</label>
+                            <input type="number" id="EntryFee" name="EntryFee" class="form-control" step="0.01" min="0" value="0" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="MaxParticipants" class="form-label">Maximum participants</label>
+                        <input type="number" id="MaxParticipants" name="MaxParticipants" class="form-control" min="1" value="100" />
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Add category</button>
+                </form>
+            </div>
+        </div>
+    </div>
+}

@@ -1,144 +1,117 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using RaceDay.Api.Data;
-using RaceDay.Api.Dtos;
-using RaceDay.Api.Models;
-using RaceDay.Api.Services;
+using RaceDay.Web.Filters;
+using RaceDay.Web.Models;
+using RaceDay.Web.Services;
 
-namespace RaceDay.Api.Controllers;
+namespace RaceDay.Web.Controllers;
 
-/// <summary>Organisers capture finish times and positions; everyone can see an event's leaderboard.</summary>
-[ApiController]
-[Route("api")]
-[Produces("application/json")]
-[SessionAuthorize]
-public class ResultsController : ControllerBase
+/// <summary>Organisers capture finish times and positions. Saved results are visible to participants straight away.</summary>
+[AppAuthorize(AppRoles.Organiser)]
+public class ResultsController : Controller
 {
-    private readonly RaceDayDbContext _db;
+    private static readonly Regex TimePattern = new(@"^\d{1,3}:[0-5]\d:[0-5]\d$", RegexOptions.Compiled);
 
-    public ResultsController(RaceDayDbContext db)
+    private readonly ApiClient _api;
+
+    public ResultsController(ApiClient api)
     {
-        _db = db;
+        _api = api;
     }
 
-    /// <summary>Capture the finish time and position for an enrolment (Organisers only).</summary>
-    /// <response code="201">Result captured.</response>
-    /// <response code="400">Validation failed (a Finished result needs a finish time and position).</response>
-    /// <response code="401">Not logged in.</response>
-    /// <response code="403">Not an Organiser, or not the owner of this event.</response>
-    /// <response code="404">Enrolment not found.</response>
-    /// <response code="409">A result already exists for this enrolment.</response>
-    [HttpPost("enrolments/{enrolmentId:int}/result")]
-    [SessionAuthorize(RoleNames.Organiser)]
-    [ProducesResponseType(typeof(ResultResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Capture(int enrolmentId, [FromBody] ResultRequest request)
+    public async Task<IActionResult> Index(int? eventId)
     {
-        var enrolment = await _db.Enrolments.Include(e => e.Event).SingleOrDefaultAsync(e => e.EnrolmentId == enrolmentId);
-        if (enrolment is null) return NotFound(new { message = "Enrolment not found." });
-        if (enrolment.Event!.OrganiserId != HttpContext.GetUserId())
-            return StatusCode(StatusCodes.Status403Forbidden, new { message = "You can only capture results for your own events." });
+        return View(await LoadPageAsync(eventId));
+    }
 
-        var status = request.Status ?? "Finished";
-        var problem = ValidateFinished(status, request);
-        if (problem is not null) return BadRequest(new { message = problem });
+    [HttpPost]
+    public async Task<IActionResult> Save(int eventId, List<ResultRowViewModel> rows)
+    {
+        var errors = new Dictionary<int, string>();
+        var saved = 0;
 
-        if (await _db.Results.AnyAsync(r => r.EnrolmentId == enrolmentId))
-            return Conflict(new { message = "A result already exists for this enrolment. Use PUT /api/results/{id} to correct it." });
-
-        var result = new Result
+        foreach (var row in rows)
         {
-            EnrolmentId = enrolmentId,
-            FinishTime = request.FinishTime,
-            Position = request.Position,
-            Status = status
-        };
+            // "Not recorded" rows are skipped
+            if (string.IsNullOrWhiteSpace(row.Status)) continue;
 
-        _db.Results.Add(result);
-        await _db.SaveChangesAsync();
+            TimeSpan? finishTime = null;
+            if (!string.IsNullOrWhiteSpace(row.FinishTime))
+            {
+                var text = row.FinishTime.Trim();
+                if (!TimePattern.IsMatch(text) || !TimeSpan.TryParse(text, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    errors[row.EnrolmentId] = "Finish time must look like 01:52:30 (hours:minutes:seconds).";
+                    continue;
+                }
+                finishTime = parsed;
+            }
 
-        return StatusCode(StatusCodes.Status201Created, await LoadResponseAsync(result.ResultId));
+            var body = new { finishTime, position = row.Position, status = row.Status };
+
+            ApiResponse<ResultDto> result = row.ResultId.HasValue
+                ? await _api.PutAsync<ResultDto>($"api/results/{row.ResultId.Value}", body)
+                : await _api.PostAsync<ResultDto>($"api/enrolments/{row.EnrolmentId}/result", body);
+
+            if (result.Success) saved++;
+            else errors[row.EnrolmentId] = result.Message;
+        }
+
+        if (errors.Count == 0)
+        {
+            TempData["Success"] = saved == 0
+                ? "Nothing to save. Choose a status for at least one participant."
+                : $"Saved {saved} result(s). They are now visible to participants.";
+            return RedirectToAction(nameof(Index), new { eventId });
+        }
+
+        // Show the page again, keeping what the organiser typed for the rows that failed
+        var model = await LoadPageAsync(eventId);
+        foreach (var row in model.Rows.Where(r => errors.ContainsKey(r.EnrolmentId)))
+        {
+            var posted = rows.First(r => r.EnrolmentId == row.EnrolmentId);
+            row.FinishTime = posted.FinishTime;
+            row.Position = posted.Position;
+            row.Status = posted.Status;
+            row.RowError = errors[row.EnrolmentId];
+        }
+
+        if (saved > 0) TempData["Success"] = $"Saved {saved} result(s).";
+        ViewBag.Error = "Some results could not be saved. Please check the rows marked below.";
+        return View("Index", model);
     }
 
-    /// <summary>Correct an existing result (Organisers only, for their own events).</summary>
-    /// <response code="200">Result updated.</response>
-    /// <response code="400">Validation failed.</response>
-    /// <response code="401">Not logged in.</response>
-    /// <response code="403">Not an Organiser, or not the owner of this event.</response>
-    /// <response code="404">Result not found.</response>
-    [HttpPut("results/{id:int}")]
-    [SessionAuthorize(RoleNames.Organiser)]
-    [ProducesResponseType(typeof(ResultResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Update(int id, [FromBody] ResultRequest request)
+    private async Task<ResultsPageViewModel> LoadPageAsync(int? eventId)
     {
-        var result = await _db.Results
-            .Include(r => r.Enrolment).ThenInclude(e => e!.Event)
-            .SingleOrDefaultAsync(r => r.ResultId == id);
-        if (result is null) return NotFound(new { message = "Result not found." });
-        if (result.Enrolment!.Event!.OrganiserId != HttpContext.GetUserId())
-            return StatusCode(StatusCodes.Status403Forbidden, new { message = "You can only edit results for your own events." });
+        var events = await _api.GetAsync<List<EventDto>>("api/events/mine");
+        var model = new ResultsPageViewModel { Events = events.Data ?? new List<EventDto>() };
+        if (!events.Success) ViewBag.Error = events.Message;
 
-        var status = request.Status ?? "Finished";
-        var problem = ValidateFinished(status, request);
-        if (problem is not null) return BadRequest(new { message = problem });
+        model.Selected = model.Events.FirstOrDefault(e => e.EventId == eventId) ?? model.Events.FirstOrDefault();
+        if (model.Selected is null) return model;
 
-        result.FinishTime = request.FinishTime;
-        result.Position = request.Position;
-        result.Status = status;
-        await _db.SaveChangesAsync();
+        var enrolments = await _api.GetAsync<List<EnrolmentDto>>($"api/events/{model.Selected.EventId}/enrolments");
+        var results = await _api.GetAsync<List<ResultDto>>($"api/events/{model.Selected.EventId}/results");
 
-        return Ok(await LoadResponseAsync(result.ResultId));
-    }
+        var resultsByEnrolment = (results.Data ?? new List<ResultDto>())
+            .ToDictionary(r => r.EnrolmentId, r => r);
 
-    /// <summary>View the results (leaderboard) for an event, ordered by position.</summary>
-    /// <response code="200">Returns the results.</response>
-    /// <response code="401">Not logged in.</response>
-    /// <response code="404">Event not found.</response>
-    [HttpGet("events/{eventId:int}/results")]
-    [ProducesResponseType(typeof(IEnumerable<ResultResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetForEvent(int eventId)
-    {
-        if (!await _db.Events.AnyAsync(e => e.EventId == eventId))
-            return NotFound(new { message = "Event not found." });
-
-        var list = await _db.Results
-            .Include(r => r.Enrolment).ThenInclude(e => e!.Participant)
-            .Include(r => r.Enrolment).ThenInclude(e => e!.Event)
-            .Include(r => r.Enrolment).ThenInclude(e => e!.Category)
-            .Where(r => r.Enrolment!.EventId == eventId)
-            .ToListAsync();
-
-        var built = await ResultResponseBuilder.BuildAsync(_db, list);
-        var ordered = built
-            .OrderBy(r => r.Position.HasValue ? 0 : 1)
-            .ThenBy(r => r.Position);
-        return Ok(ordered);
-    }
-
-    private static string? ValidateFinished(string status, ResultRequest request)
-    {
-        if (status == "Finished" && (request.FinishTime is null || request.Position is null))
-            return "A Finished result needs both a finish time and a position.";
-        return null;
-    }
-
-    private async Task<ResultResponse> LoadResponseAsync(int resultId)
-    {
-        var result = await _db.Results
-            .Include(r => r.Enrolment).ThenInclude(e => e!.Participant)
-            .Include(r => r.Enrolment).ThenInclude(e => e!.Event)
-            .Include(r => r.Enrolment).ThenInclude(e => e!.Category)
-            .SingleAsync(r => r.ResultId == resultId);
-        return (await ResultResponseBuilder.BuildAsync(_db, new[] { result })).Single();
+        foreach (var enrolment in (enrolments.Data ?? new List<EnrolmentDto>()).OrderBy(e => e.ParticipantName))
+        {
+            resultsByEnrolment.TryGetValue(enrolment.EnrolmentId, out var existing);
+            model.Rows.Add(new ResultRowViewModel
+            {
+                EnrolmentId = enrolment.EnrolmentId,
+                ResultId = existing?.ResultId,
+                ParticipantName = enrolment.ParticipantName,
+                BibNumber = enrolment.BibNumber,
+                CategoryName = enrolment.CategoryName,
+                FinishTime = existing?.FinishTime.HasValue == true ? Ui.Time(existing.FinishTime) : null,
+                Position = existing?.Position,
+                Status = existing?.Status
+            });
+        }
+        return model;
     }
 }
